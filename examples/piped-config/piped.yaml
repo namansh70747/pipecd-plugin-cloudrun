@@ -1,0 +1,102 @@
+# PipeCD Piped Configuration for Cloud Run Plugin
+# 
+# This configuration file sets up a Piped agent with the Cloud Run plugin.
+# The plugin binary is loaded at startup and communicates with piped via gRPC.
+#
+# Architecture:
+#   Control Plane (Web UI, API) <--gRPC--> Piped <--gRPC--> Cloud Run Plugin
+#
+# Usage:
+#   1. Update the apiAddress, projectID, pipedID, and pipedKeyData
+#   2. Update the plugin URL to point to your plugin binary
+#   3. Configure deploy targets for your environments
+#   4. Run: piped --config=/path/to/this/file.yaml
+
+apiVersion: pipecd.dev/v1beta1
+kind: Piped
+spec:
+  # PipeCD Control Plane API address
+  # For local development: localhost:8080
+  # For production: https://your-pipecd-server.com
+  apiAddress: localhost:8080
+  
+  # PipeCD project ID
+  projectID: your-pipecd-project
+  
+  # Unique identifier for this Piped agent
+  pipedID: your-piped-id
+  
+  # Base64-encoded Piped key (from PipeCD console)
+  pipedKeyData: <base64-encoded-piped-key>
+  
+  # Use insecure connection for local development
+  # Set to false for production
+  insecure: true
+  
+  # Git repositories to sync
+  repositories:
+    - repoId: my-apps
+      remote: https://github.com/your-org/your-apps-repo.git
+      branch: main
+      # Optional: SSH key for private repositories
+      # sshKeyData: <base64-encoded-ssh-key>
+  
+  # Plugin configuration
+  plugins:
+    - name: cloudrun
+      # Port for plugin gRPC server (must be unique per plugin)
+      port: 7001
+      
+      # URL to download plugin binary
+      # Can be:
+      #   - HTTP/HTTPS URL: https://github.com/your-org/releases/download/v0.1.0/plugin_cloudrun_linux_amd64
+      #   - Local file: file:///path/to/plugin_cloudrun
+      url: https://github.com/your-org/pipecd-plugin-cloudrun/releases/download/v0.1.0/plugin_cloudrun_linux_amd64
+      
+      # Plugin-level configuration (shared across all deploy targets)
+      config:
+        # Default GCP project ID
+        projectID: my-default-project
+        
+        # Default GCP region
+        region: us-central1
+        
+        # Default credentials file (optional)
+        # If not specified, uses Application Default Credentials
+        # credentialsFile: /etc/piped/gcp-key.json
+      
+      # Deploy targets (environments)
+      deployTargets:
+        # Staging environment
+        - name: staging
+          config:
+            # GCP project for staging
+            projectID: my-staging-project
+            
+            # GCP region for staging
+            region: us-central1
+            
+            # Service account key for staging
+            # The service account should have roles/run.developer permission
+            credentialsFile: /etc/piped/gcp-staging-key.json
+        
+        # Production environment
+        - name: production
+          config:
+            # GCP project for production
+            projectID: my-production-project
+            
+            # GCP region for production
+            region: us-east1
+            
+            # Service account key for production
+            credentialsFile: /etc/piped/gcp-production-key.json
+
+  # Optional: Enable insights collection
+  insight:
+    enabled: true
+
+  # Optional: Event watcher configuration
+  eventWatcher:
+    enabled: true
+    checkInterval: 1m

@@ -1,0 +1,211 @@
+# Cloud Run Service Manifest
+#
+# This file defines the Cloud Run service configuration.
+# It's based on the Knative Service specification.
+#
+# Reference: https://cloud.google.com/run/docs/reference/yaml/v1
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  # Service name
+  # This will be used to create the Cloud Run service URL:
+  # https://my-service-abc123-uc.a.run.app
+  name: my-service
+  
+  # Labels for organizing resources
+  labels:
+    # The 'app' label is required by the plugin
+    app: my-service
+    
+    # Additional labels
+    environment: production
+    team: platform
+    managed-by: pipecd
+  
+  # Annotations for service-level configuration
+  annotations:
+    # Ingress settings
+    # Options: all, internal, internal-and-cloud-load-balancing
+    run.googleapis.com/ingress: all
+    
+    # Enable HTTP/2 (for gRPC services)
+    # run.googleapis.com/ingress-status: "http2"
+    
+    # Execution environment
+    # Options: gen1, gen2
+    run.googleapis.com/execution-environment: gen2
+
+spec:
+  template:
+    metadata:
+      # Revision name (optional)
+      # If not specified, Cloud Run generates one automatically
+      # name: my-service-v1
+      
+      # Annotations for revision-level configuration
+      annotations:
+        # Autoscaling configuration
+        # Minimum number of instances (0 = scale to zero)
+        autoscaling.knative.dev/minScale: "0"
+        
+        # Maximum number of instances
+        autoscaling.knative.dev/maxScale: "10"
+        
+        # Target concurrent requests per instance
+        # autoscaling.knative.dev/targetConcurrency: "100"
+        
+        # Target CPU utilization percentage
+        # autoscaling.knative.dev/targetCPUUtilizationPercentage: "80"
+        
+        # Target memory utilization percentage
+        # autoscaling.knative.dev/targetMemoryUtilizationPercentage: "80"
+        
+        # Cloud SQL connections (comma-separated list of connection names)
+        # run.googleapis.com/cloudsql-instances: "project:region:instance"
+        
+        # VPC connector
+        # run.googleapis.com/vpc-access-connector: "projects/project/locations/region/connectors/connector-name"
+        
+        # VPC egress settings
+        # Options: all-traffic, private-ranges-only
+        # run.googleapis.com/vpc-access-egress: "private-ranges-only"
+        
+        # Enable startup CPU boost
+        run.googleapis.com/cpu-throttling: "false"
+        
+        # Session affinity (for WebSocket support)
+        # run.googleapis.com/sessionAffinity: "true"
+        
+        # Startup probe settings
+        # run.googleapis.com/startup-probe-path: "/health"
+        # run.googleapis.com/startup-probe-initial-delay: "0"
+        # run.googleapis.com/startup-probe-period: "1"
+        # run.googleapis.com/startup-probe-failure-threshold: "3"
+    
+    spec:
+      # Container concurrency (max simultaneous requests per instance)
+      # 0 = unlimited, 1 = single request at a time
+      containerConcurrency: 100
+      
+      # Timeout for requests (seconds)
+      # timeoutSeconds: 300
+      
+      # Service account to use for this revision
+      # If not specified, uses the default compute service account
+      # serviceAccountName: my-service-account@project.iam.gserviceaccount.com
+      
+      # Container configuration
+      containers:
+        - # Container image
+          # This can be overridden in .pipe.yaml
+          image: gcr.io/my-project/my-app:latest
+          
+          # Container name
+          name: my-app
+          
+          # Container ports
+          ports:
+            - # Port number the container listens on
+              containerPort: 8080
+              
+              # Protocol
+              # Options: TCP, HTTP1, HTTP2, gRPC
+              name: http1
+          
+          # Environment variables
+          env:
+            - name: PORT
+              value: "8080"
+            
+            - name: ENVIRONMENT
+              value: "production"
+            
+            # Reference a secret from Secret Manager
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: api-key-secret
+                  key: latest
+            
+            # Reference a config map (Kubernetes-style, not supported in Cloud Run)
+            # - name: CONFIG_VALUE
+            #   valueFrom:
+            #     configMapKeyRef:
+            #       name: my-config
+            #       key: my-key
+          
+          # Resource limits
+          resources:
+            limits:
+              # CPU (in millicores or Kubernetes format)
+              # 1000m = 1 vCPU
+              cpu: "1000m"
+              
+              # Memory (in Mi or Gi)
+              memory: "512Mi"
+              
+              # Ephemeral storage (in Mi or Gi)
+              # ephemeral-storage: "1Gi"
+          
+          # Startup probe
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 1
+            failureThreshold: 3
+            timeoutSeconds: 1
+          
+          # Liveness probe
+          # livenessProbe:
+          #   httpGet:
+          #     path: /health
+          #     port: 8080
+          #   initialDelaySeconds: 0
+          #   periodSeconds: 10
+          #   failureThreshold: 3
+          
+          # Readiness probe
+          # readinessProbe:
+          #   httpGet:
+          #     path: /ready
+          #     port: 8080
+          #   initialDelaySeconds: 0
+          #   periodSeconds: 10
+          #   failureThreshold: 3
+          
+          # Volume mounts
+          # volumeMounts:
+          #   - name: my-volume
+          #     mountPath: /data
+      
+      # Volumes
+      # volumes:
+      #   - name: my-volume
+      #     secret:
+      #       secretName: my-secret
+      #       items:
+      #         - key: my-key
+      #           path: my-file.txt
+  
+  # Traffic configuration
+  # This controls how traffic is split between revisions
+  traffic:
+    # Route 100% traffic to the latest revision
+    - latestRevision: true
+      percent: 100
+      
+      # Optional: Tag for the revision
+      # This creates a unique URL: https://TAG---my-service-abc123-uc.a.run.app
+      # tag: latest
+    
+    # Example: Split traffic between revisions
+    # - revisionName: my-service-00001-abc
+    #   percent: 90
+    #   tag: stable
+    # 
+    # - revisionName: my-service-00002-def
+    #   percent: 10
+    #   tag: canary

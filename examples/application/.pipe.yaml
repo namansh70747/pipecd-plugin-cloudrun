@@ -1,0 +1,265 @@
+# PipeCD Application Configuration for Cloud Run
+#
+# This file defines how PipeCD should deploy your Cloud Run application.
+# Place this file in your application directory alongside your service.yaml.
+#
+# Deployment Strategies:
+#   1. Quick Sync (default): Deploy and route 100% traffic immediately
+#   2. Pipeline Sync: Progressive delivery with custom stages
+
+# =============================================================================
+# Example 1: Quick Sync (Simple Deployment)
+# =============================================================================
+# This is the simplest deployment strategy - it deploys the new revision
+# and immediately routes 100% traffic to it.
+
+apiVersion: pipecd.dev/v1beta1
+kind: CloudRunApp
+spec:
+  # Application name (displayed in PipeCD UI)
+  name: my-cloudrun-app
+  
+  # Labels for organizing applications
+  labels:
+    env: production
+    team: platform
+    app: my-service
+  
+  # Input configuration
+  input:
+    # Path to the Cloud Run service manifest (relative to app directory)
+    serviceManifestPath: service.yaml
+    
+    # Container image to deploy (overrides manifest)
+    # This can be updated by CI/CD pipeline
+    image: gcr.io/my-project/my-app:v1.0.0
+    
+    # Optional: Override deploy target settings
+    # projectID: my-project
+    # region: us-central1
+  
+  # Quick sync configuration (used when no pipeline is specified)
+  quickSync:
+    # Remove unused revisions after deployment
+    prune: true
+
+---
+
+# =============================================================================
+# Example 2: Pipeline Sync - Canary Deployment
+# =============================================================================
+# This strategy deploys gradually, shifting traffic in stages.
+# It's safer for production deployments.
+
+apiVersion: pipecd.dev/v1beta1
+kind: CloudRunApp
+spec:
+  name: my-cloudrun-app-canary
+  
+  labels:
+    env: production
+    team: platform
+  
+  input:
+    serviceManifestPath: service.yaml
+    image: gcr.io/my-project/my-app:v1.0.0
+  
+  # Pipeline sync configuration
+  pipeline:
+    stages:
+      # Stage 1: Deploy new revision with 0% traffic
+      # This creates the revision but doesn't route any traffic yet
+      - name: CLOUDRUN_SYNC
+        with:
+          skipTrafficShift: true
+      
+      # Stage 2: Route 10% traffic to new revision (Canary)
+      - name: CLOUDRUN_PROMOTE
+        with:
+          percent: 10
+      
+      # Stage 3: Wait and monitor
+      - name: WAIT
+        with:
+          duration: 5m
+      
+      # Stage 4: Route 50% traffic (A/B test)
+      - name: CLOUDRUN_PROMOTE
+        with:
+          percent: 50
+      
+      # Stage 5: Wait and monitor
+      - name: WAIT
+        with:
+          duration: 10m
+      
+      # Stage 6: Route 100% traffic (Full promotion)
+      - name: CLOUDRUN_PROMOTE
+        with:
+          percent: 100
+      
+      # Stage 7: Clean up old revisions
+      - name: CLOUDRUN_CANARY_CLEANUP
+        with:
+          keepCount: 3
+          keepLatest: true
+
+---
+
+# =============================================================================
+# Example 3: Pipeline Sync - Blue-Green Deployment
+# =============================================================================
+# This strategy deploys a new revision, tests it, then switches all traffic.
+
+apiVersion: pipecd.dev/v1beta1
+kind: CloudRunApp
+spec:
+  name: my-cloudrun-app-bluegreen
+  
+  labels:
+    env: production
+    team: platform
+  
+  input:
+    serviceManifestPath: service.yaml
+    image: gcr.io/my-project/my-app:v1.0.0
+  
+  pipeline:
+    stages:
+      # Deploy new revision (0% traffic)
+      - name: CLOUDRUN_SYNC
+        with:
+          skipTrafficShift: true
+      
+      # Add tag for testing the new revision
+      # The new revision gets a unique URL like: https://new---my-service-abc123-uc.a.run.app
+      - name: CLOUDRUN_PROMOTE
+        with:
+          percent: 0
+      
+      # Wait for approval before promoting
+      - name: WAIT_APPROVAL
+      
+      # Switch all traffic to new revision
+      - name: CLOUDRUN_PROMOTE
+        with:
+          percent: 100
+      
+      # Clean up old revisions
+      - name: CLOUDRUN_CANARY_CLEANUP
+        with:
+          keepCount: 2
+
+---
+
+# =============================================================================
+# Example 4: Pipeline Sync - With Automated Analysis
+# =============================================================================
+# This strategy includes automated analysis using metrics.
+
+apiVersion: pipecd.dev/v1beta1
+kind: CloudRunApp
+spec:
+  name: my-cloudrun-app-analysis
+  
+  labels:
+    env: production
+    team: platform
+  
+  input:
+    serviceManifestPath: service.yaml
+    image: gcr.io/my-project/my-app:v1.0.0
+  
+  pipeline:
+    stages:
+      # Deploy with 0% traffic
+      - name: CLOUDRUN_SYNC
+        with:
+          skipTrafficShift: true
+      
+      # Promote to 10%
+      - name: CLOUDRUN_PROMOTE
+        with:
+          percent: 10
+      
+      # Run automated analysis
+      - name: ANALYSIS
+        with:
+          # Duration of analysis
+          duration: 10m
+          
+          # Metrics provider (configured in control plane)
+          metricsProvider: prometheus
+          
+          # Query to evaluate
+          query: |
+            sum(rate(http_requests_total{status=~"5.."}[1m])) 
+            / 
+            sum(rate(http_requests_total[1m]))
+          
+          # Expected threshold
+          expected: < 0.01
+          
+          # Failure threshold (rollback if exceeded)
+          failureThreshold: 3
+      
+      # Promote to 100% if analysis passes
+      - name: CLOUDRUN_PROMOTE
+        with:
+          percent: 100
+      
+      # Clean up
+      - name: CLOUDRUN_CANARY_CLEANUP
+
+---
+
+# =============================================================================
+# Example 5: Pipeline Sync - With Rollback on Failure
+# =============================================================================
+# This strategy automatically rolls back if deployment fails.
+
+apiVersion: pipecd.dev/v1beta1
+kind: CloudRunApp
+spec:
+  name: my-cloudrun-app-rollback
+  
+  labels:
+    env: production
+    team: platform
+  
+  input:
+    serviceManifestPath: service.yaml
+    image: gcr.io/my-project/my-app:v1.0.0
+  
+  pipeline:
+    stages:
+      # Deploy with 0% traffic
+      - name: CLOUDRUN_SYNC
+        with:
+          skipTrafficShift: true
+      
+      # Promote to 25%
+      - name: CLOUDRUN_PROMOTE
+        with:
+          percent: 25
+      
+      # Wait and monitor
+      - name: WAIT
+        with:
+          duration: 5m
+      
+      # Promote to 100%
+      - name: CLOUDRUN_PROMOTE
+        with:
+          percent: 100
+    
+    # Rollback pipeline (executed if any stage fails)
+    rollback:
+      stages:
+        # Rollback to previous revision
+        - name: CLOUDRUN_ROLLBACK
+        
+        # Clean up failed revision
+        - name: CLOUDRUN_CANARY_CLEANUP
+          with:
+            keepCount: 2
