@@ -90,10 +90,10 @@ func (e *StageExecutor) ExecutePromoteStage(
 	}
 
 	// Get service name
-	serviceName := input.Request.ApplicationConfig.Spec.Input.ServiceName
+	serviceName := input.Request.TargetDeploymentSource.ApplicationConfig.Spec.Input.ServiceName
 	if serviceName == "" {
 		// Try to get from metadata
-		serviceName = input.Request.Deployment.DeploymentReference.ApplicationID
+		serviceName = input.Request.Deployment.ApplicationID
 	}
 
 	lp.Infof("Promoting service %s to %d%% traffic", serviceName, stageCfg.Percent)
@@ -114,7 +114,7 @@ func (e *StageExecutor) ExecutePromoteStage(
 	// Get current traffic for logging
 	currentTraffic, err := tm.GetCurrentTraffic(ctx, project, region, serviceName)
 	if err != nil {
-		lp.Warnf("Failed to get current traffic: %v", err)
+		lp.Infof("Warning: Failed to get current traffic: %v", err)
 	} else {
 		lp.Info("Current traffic allocation:")
 		for _, t := range currentTraffic {
@@ -133,7 +133,7 @@ func (e *StageExecutor) ExecutePromoteStage(
 	// Get new traffic allocation
 	newTraffic, err := tm.GetCurrentTraffic(ctx, project, region, serviceName)
 	if err != nil {
-		lp.Warnf("Failed to get new traffic: %v", err)
+		lp.Infof("Warning: Failed to get new traffic: %v", err)
 	} else {
 		lp.Info("New traffic allocation:")
 		for _, t := range newTraffic {
@@ -145,9 +145,5 @@ func (e *StageExecutor) ExecutePromoteStage(
 
 	return &sdk.ExecuteStageResponse{
 		Status: sdk.StageStatusSuccess,
-		Metadata: map[string]string{
-			"traffic_percent": fmt.Sprintf("%d", stageCfg.Percent),
-			"service_name":    serviceName,
-		},
 	}, nil
 }

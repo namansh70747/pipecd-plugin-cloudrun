@@ -132,11 +132,16 @@ func (c *client) CreateOrUpdateService(ctx context.Context, service *runpb.Servi
 
 	if err != nil {
 		// Service doesn't exist, create it
-		return c.servicesClient.CreateService(ctx, &runpb.CreateServiceRequest{
+		op, err := c.servicesClient.CreateService(ctx, &runpb.CreateServiceRequest{
 			Parent:    getParentFromServiceName(service.Name),
 			ServiceId: getServiceIDFromServiceName(service.Name),
 			Service:   service,
 		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create service: %w", err)
+		}
+		// Wait for operation to complete
+		return op.Wait(ctx)
 	}
 
 	// Service exists, update it
@@ -148,10 +153,15 @@ func (c *client) CreateOrUpdateService(ctx context.Context, service *runpb.Servi
 		},
 	}
 
-	return c.servicesClient.UpdateService(ctx, &runpb.UpdateServiceRequest{
+	op, err := c.servicesClient.UpdateService(ctx, &runpb.UpdateServiceRequest{
 		Service:    service,
 		UpdateMask: updateMask,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update service: %w", err)
+	}
+	// Wait for operation to complete
+	return op.Wait(ctx)
 }
 
 // UpdateTraffic updates traffic allocation for a service.
@@ -217,9 +227,15 @@ func (c *client) GetRevision(ctx context.Context, project, region, service, revi
 func (c *client) DeleteRevision(ctx context.Context, project, region, service, revision string) error {
 	name := fmt.Sprintf("projects/%s/locations/%s/services/%s/revisions/%s",
 		project, region, service, revision)
-	return c.revisionsClient.DeleteRevision(ctx, &runpb.DeleteRevisionRequest{
+	op, err := c.revisionsClient.DeleteRevision(ctx, &runpb.DeleteRevisionRequest{
 		Name: name,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to delete revision: %w", err)
+	}
+	// Wait for operation to complete
+	_, err = op.Wait(ctx)
+	return err
 }
 
 // WaitForServiceReady waits for a service to be ready.
@@ -245,7 +261,7 @@ func (c *client) WaitForServiceReady(ctx context.Context, project, region, servi
 			// Check if service is ready
 			if svc.Conditions != nil {
 				for _, cond := range svc.Conditions {
-					if cond.Type == runpb.Condition_READY {
+					if cond.Type == "Ready" {
 						if cond.State == runpb.Condition_CONDITION_SUCCEEDED {
 							return nil
 						}

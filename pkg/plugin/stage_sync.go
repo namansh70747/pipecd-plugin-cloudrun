@@ -16,7 +16,6 @@ package plugin
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,10 +31,10 @@ import (
 // ExecuteSyncStage executes the CLOUDRUN_SYNC stage.
 //
 // This stage:
-//   1. Reads the service manifest from the application directory
-//   2. Applies any image overrides from the app config
-//   3. Creates or updates the Cloud Run service
-//   4. Optionally routes traffic to the new revision
+//  1. Reads the service manifest from the application directory
+//  2. Applies any image overrides from the app config
+//  3. Creates or updates the Cloud Run service
+//  4. Optionally routes traffic to the new revision
 //
 // For Quick Sync: Routes 100% traffic immediately
 // For Pipeline Sync: May skip traffic shift (controlled by skipTrafficShift option)
@@ -88,7 +87,7 @@ func (e *StageExecutor) ExecuteSyncStage(
 
 	// Read service manifest
 	appDir := input.Request.RunningDeploymentSource.ApplicationDirectory
-	manifestPath := input.Request.ApplicationConfig.Spec.ServiceManifestPath
+	manifestPath := input.Request.TargetDeploymentSource.ApplicationConfig.Spec.ServiceManifestPath
 	if manifestPath == "" {
 		manifestPath = "service.yaml" // Default manifest path
 	}
@@ -116,7 +115,7 @@ func (e *StageExecutor) ExecuteSyncStage(
 	}
 
 	// Extract service name from manifest or use configured name
-	serviceName := input.Request.ApplicationConfig.Spec.Input.ServiceName
+	serviceName := input.Request.TargetDeploymentSource.ApplicationConfig.Spec.Input.ServiceName
 	if serviceName == "" && service.Template != nil && service.Template.Labels != nil {
 		serviceName = service.Template.Labels["app"]
 	}
@@ -130,7 +129,7 @@ func (e *StageExecutor) ExecuteSyncStage(
 	cloudrun.SetServiceName(&service, project, region, serviceName)
 
 	// Override image if specified in app config
-	image := input.Request.ApplicationConfig.Spec.Input.Image
+	image := input.Request.TargetDeploymentSource.ApplicationConfig.Spec.Input.Image
 	if image != "" {
 		lp.Infof("Overriding container image: %s", image)
 		cloudrun.ApplyImageOverride(&service, image)
@@ -155,7 +154,7 @@ func (e *StageExecutor) ExecuteSyncStage(
 			lp.Info("Routing 100% traffic to new revision")
 			service.Traffic = []*runpb.TrafficTarget{
 				{
-					Type:    &runpb.TrafficTarget_LatestRevision{LatestRevision: true},
+					Type:    runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST,
 					Percent: 100,
 				},
 			}
@@ -164,7 +163,7 @@ func (e *StageExecutor) ExecuteSyncStage(
 		// New service - route 100% to latest
 		service.Traffic = []*runpb.TrafficTarget{
 			{
-				Type:    &runpb.TrafficTarget_LatestRevision{LatestRevision: true},
+				Type:    runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST,
 				Percent: 100,
 			},
 		}
@@ -196,17 +195,12 @@ func (e *StageExecutor) ExecuteSyncStage(
 		lp.Info("Pruning old revisions...")
 		rm := cloudrun.NewRevisionManager(client)
 		if err := rm.CleanupOldRevisions(ctx, project, region, serviceName, 5, true); err != nil {
-			lp.Warnf("Failed to prune old revisions: %v", err)
+			lp.Infof("Warning: Failed to prune old revisions: %v", err)
 			// Don't fail the stage for pruning errors
 		}
 	}
 
 	return &sdk.ExecuteStageResponse{
 		Status: sdk.StageStatusSuccess,
-		Metadata: map[string]string{
-			"revision":     result.Template.Revision,
-			"service_url":  result.Uri,
-			"service_name": serviceName,
-		},
 	}, nil
 }

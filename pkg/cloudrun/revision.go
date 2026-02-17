@@ -67,13 +67,10 @@ func (rm *RevisionManager) ListRevisions(ctx context.Context, project, region, s
 	// Build traffic map
 	trafficMap := make(map[string]int32)
 	for _, t := range svc.Traffic {
-		switch v := t.Type.(type) {
-		case *runpb.TrafficTarget_LatestRevision:
-			if v.LatestRevision {
-				trafficMap[latestRevision] = t.Percent
-			}
-		case *runpb.TrafficTarget_RevisionName:
-			trafficMap[v.RevisionName] = t.Percent
+		if t.Type == runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST {
+			trafficMap[latestRevision] = t.Percent
+		} else if t.Type == runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION {
+			trafficMap[t.Revision] = t.Percent
 		}
 	}
 
@@ -111,13 +108,10 @@ func (rm *RevisionManager) GetRevision(ctx context.Context, project, region, ser
 
 	trafficMap := make(map[string]int32)
 	for _, t := range svc.Traffic {
-		switch v := t.Type.(type) {
-		case *runpb.TrafficTarget_LatestRevision:
-			if v.LatestRevision {
-				trafficMap[latestRevision] = t.Percent
-			}
-		case *runpb.TrafficTarget_RevisionName:
-			trafficMap[v.RevisionName] = t.Percent
+		if t.Type == runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST {
+			trafficMap[latestRevision] = t.Percent
+		} else if t.Type == runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION {
+			trafficMap[t.Revision] = t.Percent
 		}
 	}
 
@@ -227,7 +221,7 @@ func (rm *RevisionManager) buildRevisionInfo(rev *runpb.Revision, latestRevision
 
 	// Extract conditions
 	for _, cond := range rev.Conditions {
-		info.Conditions[cond.Type.String()] = cond.State == runpb.Condition_CONDITION_SUCCEEDED
+		info.Conditions[cond.Type] = cond.State == runpb.Condition_CONDITION_SUCCEEDED
 	}
 
 	return info

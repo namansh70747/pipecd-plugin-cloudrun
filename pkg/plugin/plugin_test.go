@@ -49,10 +49,14 @@ func TestCloudRunPlugin_DetermineStrategy_QuickSync(t *testing.T) {
 	p := NewCloudRunPlugin()
 
 	input := &sdk.DetermineStrategyInput[config.ApplicationConfig]{
-		ApplicationConfig: &sdk.ApplicationConfig[config.ApplicationConfig]{
-			Spec: config.ApplicationConfig{
-				// No pipeline sync configured
-				PipelineSync: nil,
+		Request: sdk.DetermineStrategyRequest[config.ApplicationConfig]{
+			TargetDeploymentSource: sdk.DeploymentSource[config.ApplicationConfig]{
+				ApplicationConfig: &sdk.ApplicationConfig[config.ApplicationConfig]{
+					Spec: &config.ApplicationConfig{
+						// No pipeline sync configured
+						PipelineSync: nil,
+					},
+				},
 			},
 		},
 	}
@@ -71,11 +75,15 @@ func TestCloudRunPlugin_DetermineStrategy_PipelineSync(t *testing.T) {
 	p := NewCloudRunPlugin()
 
 	input := &sdk.DetermineStrategyInput[config.ApplicationConfig]{
-		ApplicationConfig: &sdk.ApplicationConfig[config.ApplicationConfig]{
-			Spec: config.ApplicationConfig{
-				PipelineSync: &config.PipelineSyncConfig{
-					Stages: []config.PipelineStage{
-						{Name: StageCloudRunSync},
+		Request: sdk.DetermineStrategyRequest[config.ApplicationConfig]{
+			TargetDeploymentSource: sdk.DeploymentSource[config.ApplicationConfig]{
+				ApplicationConfig: &sdk.ApplicationConfig[config.ApplicationConfig]{
+					Spec: &config.ApplicationConfig{
+						PipelineSync: &config.PipelineSyncConfig{
+							Stages: []config.PipelineStage{
+								{Name: StageCloudRunSync},
+							},
+						},
 					},
 				},
 			},
@@ -116,7 +124,7 @@ func TestCloudRunPlugin_BuildPipelineSyncStages(t *testing.T) {
 
 	input := &sdk.BuildPipelineSyncStagesInput{
 		Request: sdk.BuildPipelineSyncStagesRequest{
-			Stages: []sdk.PipelineStage{
+			Stages: []sdk.StageConfig{
 				{Index: 0, Name: StageCloudRunSync},
 				{Index: 1, Name: StageCloudRunPromote},
 				{Index: 2, Name: StageCloudRunCanaryCleanup},

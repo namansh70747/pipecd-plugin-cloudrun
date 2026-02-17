@@ -31,13 +31,13 @@ import (
 //
 // Rollback Scenarios:
 //
-//	1. Rollback to previous revision (default):
-//	   - Finds the second most recent revision
-//	   - Routes 100% traffic to it
+//  1. Rollback to previous revision (default):
+//     - Finds the second most recent revision
+//     - Routes 100% traffic to it
 //
-//	2. Rollback to specific revision:
-//	   - Uses the revision specified in config
-//	   - Routes 100% traffic to it
+//  2. Rollback to specific revision:
+//     - Uses the revision specified in config
+//     - Routes 100% traffic to it
 //
 // Example Pipeline with Rollback:
 //
@@ -87,9 +87,9 @@ func (e *StageExecutor) ExecuteRollbackStage(
 	}
 
 	// Get service name
-	serviceName := input.Request.ApplicationConfig.Spec.Input.ServiceName
+	serviceName := input.Request.TargetDeploymentSource.ApplicationConfig.Spec.Input.ServiceName
 	if serviceName == "" {
-		serviceName = input.Request.Deployment.DeploymentReference.ApplicationID
+		serviceName = input.Request.Deployment.ApplicationID
 	}
 
 	lp.Infof("Rolling back service: %s", serviceName)
@@ -131,7 +131,7 @@ func (e *StageExecutor) ExecuteRollbackStage(
 	// Get revision info for logging
 	revInfo, err := rm.GetRevision(ctx, project, region, serviceName, targetRevision)
 	if err != nil {
-		lp.Warnf("Failed to get revision info: %v", err)
+		lp.Infof("Warning: Failed to get revision info: %v", err)
 	} else {
 		lp.Infof("Target revision image: %s", revInfo.Image)
 	}
@@ -148,9 +148,5 @@ func (e *StageExecutor) ExecuteRollbackStage(
 
 	return &sdk.ExecuteStageResponse{
 		Status: sdk.StageStatusSuccess,
-		Metadata: map[string]string{
-			"rollback_revision": targetRevision,
-			"service_name":      serviceName,
-		},
 	}, nil
 }

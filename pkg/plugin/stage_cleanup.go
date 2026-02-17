@@ -76,9 +76,9 @@ func (e *StageExecutor) ExecuteCanaryCleanupStage(
 	}
 
 	// Get service name
-	serviceName := input.Request.ApplicationConfig.Spec.Input.ServiceName
+	serviceName := input.Request.TargetDeploymentSource.ApplicationConfig.Spec.Input.ServiceName
 	if serviceName == "" {
-		serviceName = input.Request.Deployment.DeploymentReference.ApplicationID
+		serviceName = input.Request.Deployment.ApplicationID
 	}
 
 	lp.Infof("Cleaning up revisions for service: %s", serviceName)
@@ -122,7 +122,7 @@ func (e *StageExecutor) ExecuteCanaryCleanupStage(
 	// List revisions after cleanup
 	revisionsAfter, err := rm.ListRevisions(ctx, project, region, serviceName)
 	if err != nil {
-		lp.Warnf("Failed to list revisions after cleanup: %v", err)
+		lp.Infof("Warning: Failed to list revisions after cleanup: %v", err)
 	} else {
 		deletedCount := len(revisions) - len(revisionsAfter)
 		lp.Infof("Cleanup complete. Deleted %d revisions, %d remaining", deletedCount, len(revisionsAfter))
@@ -132,8 +132,5 @@ func (e *StageExecutor) ExecuteCanaryCleanupStage(
 
 	return &sdk.ExecuteStageResponse{
 		Status: sdk.StageStatusSuccess,
-		Metadata: map[string]string{
-			"service_name": serviceName,
-		},
 	}, nil
 }

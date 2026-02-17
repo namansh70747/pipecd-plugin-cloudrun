@@ -23,10 +23,10 @@
 //
 // Deployment Flow:
 //
-//	1. DetermineVersions - Extract version info from the deployment
-//	2. DetermineStrategy - Decide between quick sync and pipeline sync
-//	3. BuildQuickSyncStages / BuildPipelineSyncStages - Define deployment stages
-//	4. ExecuteStage - Execute each stage (SYNC, PROMOTE, ROLLBACK, CLEANUP)
+//  1. DetermineVersions - Extract version info from the deployment
+//  2. DetermineStrategy - Decide between quick sync and pipeline sync
+//  3. BuildQuickSyncStages / BuildPipelineSyncStages - Define deployment stages
+//  4. ExecuteStage - Execute each stage (SYNC, PROMOTE, ROLLBACK, CLEANUP)
 //
 // Example Pipeline (Canary Deployment):
 //
@@ -93,13 +93,12 @@ func (p *cloudrunPlugin) DetermineVersions(
 	input *sdk.DetermineVersionsInput[config.ApplicationConfig],
 ) (*sdk.DetermineVersionsResponse, error) {
 	// Extract version from container image
-	image := input.DeploymentSource.ApplicationConfig.Spec.Input.Image
+	image := input.Request.DeploymentSource.ApplicationConfig.Spec.Input.Image
 	version := extractVersionFromImage(image)
 
 	return &sdk.DetermineVersionsResponse{
-		Versions: []*sdk.Version{
+		Versions: []sdk.ArtifactVersion{
 			{
-				Kind:    "ContainerImage",
 				Version: version,
 				Name:    image,
 			},
@@ -117,7 +116,7 @@ func (p *cloudrunPlugin) DetermineStrategy(
 	input *sdk.DetermineStrategyInput[config.ApplicationConfig],
 ) (*sdk.DetermineStrategyResponse, error) {
 	// Check if pipeline is defined in app config
-	if input.ApplicationConfig.Spec.PipelineSync != nil {
+	if input.Request.TargetDeploymentSource.ApplicationConfig.Spec.PipelineSync != nil {
 		return &sdk.DetermineStrategyResponse{
 			Strategy: sdk.SyncStrategyPipelineSync,
 		}, nil
@@ -140,14 +139,9 @@ func (p *cloudrunPlugin) BuildQuickSyncStages(
 	cfg *config.PluginConfig,
 	input *sdk.BuildQuickSyncStagesInput,
 ) (*sdk.BuildQuickSyncStagesResponse, error) {
-	stages := []sdk.PipelineStage{
+	stages := []sdk.QuickSyncStage{
 		{
-			Index:              0,
-			Name:               StageCloudRunSync,
-			Rollback:           false,
-			Metadata:           map[string]string{},
-			AvailableOperation: sdk.ManualOperationNone,
-			Description:        StageDescriptionCloudRunSync,
+			Name: StageCloudRunSync,
 		},
 	}
 
@@ -178,10 +172,8 @@ func (p *cloudrunPlugin) BuildPipelineSyncStages(
 		stage := sdk.PipelineStage{
 			Index:              rs.Index,
 			Name:               rs.Name,
-			Rollback:           rs.Rollback,
-			Metadata:           map[string]string{},
+			Rollback:           false,
 			AvailableOperation: sdk.ManualOperationNone,
-			Description:        getStageDescription(rs.Name),
 		}
 		stages = append(stages, stage)
 	}

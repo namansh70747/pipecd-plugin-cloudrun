@@ -69,7 +69,7 @@ func LoadServiceManifest(path string) (*runpb.Service, error) {
 	}
 
 	var service runpb.Service
-	
+
 	// Try JSON first
 	if err := protojson.Unmarshal(data, &service); err != nil {
 		// If JSON fails, try YAML (convert to JSON first)
@@ -166,10 +166,10 @@ type ServiceInfo struct {
 
 // TrafficInfo contains traffic allocation information.
 type TrafficInfo struct {
-	Revision     string
-	Percent      int32
-	IsLatest     bool
-	Tag          string
+	Revision string
+	Percent  int32
+	IsLatest bool
+	Tag      string
 }
 
 // GetServiceInfo retrieves summary information about a service.
@@ -196,12 +196,11 @@ func (sm *ServiceManager) GetServiceInfo(ctx context.Context, project, region, n
 			Tag:     t.Tag,
 		}
 
-		switch t.Type.(type) {
-		case *runpb.TrafficTarget_LatestRevision:
+		if t.Type == runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST {
 			trafficInfo.IsLatest = true
 			trafficInfo.Revision = "LATEST"
-		case *runpb.TrafficTarget_RevisionName:
-			trafficInfo.Revision = t.GetRevisionName()
+		} else if t.Type == runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION {
+			trafficInfo.Revision = t.Revision
 		}
 
 		info.Traffic = append(info.Traffic, trafficInfo)

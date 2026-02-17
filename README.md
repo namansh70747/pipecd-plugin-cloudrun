@@ -1,437 +1,177 @@
 # PipeCD Cloud Run Plugin
 
-A [PipeCD](https://pipecd.dev) plugin for deploying applications to [Google Cloud Run](https://cloud.google.com/run) with support for progressive delivery strategies like canary deployments and traffic splitting.
+A [PipeCD](https://pipecd.dev) plugin for deploying containerized applications to [Google Cloud Run](https://cloud.google.com/run) with progressive delivery support.
 
-## Table of Contents
+## Quick Start
 
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Features](#features)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Deployment Strategies](#deployment-strategies)
-- [Development](#development)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
+### Build
 
-## Overview
-
-This plugin enables PipeCD to deploy containerized applications to Google Cloud Run. It implements the PipeCD Plugin SDK (pipedv1) to provide seamless integration with the PipeCD control plane.
-
-### What is PipeCD?
-
-PipeCD is a GitOps-style continuous delivery platform that supports multiple application platforms including Kubernetes, Cloud Run, Terraform, ECS, and Lambda. With the new plugin architecture (pipedv1), anyone can develop custom plugins to extend PipeCD's capabilities.
-
-### What is Cloud Run?
-
-Google Cloud Run is a fully managed compute platform that automatically scales your stateless containers. It abstracts away all infrastructure management, allowing you to focus on building great applications.
-
-## Architecture
-
+```bash
+make build
+# Output: build/cloudrun-plugin
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    PipeCD Control Plane                          │
-│         (Web UI, API, Metadata Storage)                          │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              │ gRPC
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      Piped (Agent)                               │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │   Plugin    │  │   Plugin    │  │   Plugin    │              │
-│  │ Kubernetes  │  │  Cloud Run  │  │  Terraform  │              │
-│  │  (gRPC)     │  │  (gRPC)     │  │  (gRPC)     │              │
-│  └─────────────┘  └─────────────┘  └─────────────┘              │
-│                                                                  │
-│  Piped Core: Controls deployment flows, handles Git operations   │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              │ HTTPS
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Google Cloud Run                              │
-│         (Managed container platform)                             │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### How It Works
-
-1. **Plugin Registration**: The plugin binary is loaded by piped on startup
-2. **Deployment Trigger**: PipeCD control plane triggers a deployment
-3. **Stage Execution**: Piped sends stage execution requests to the plugin via gRPC
-4. **Cloud Run API**: The plugin interacts with Cloud Run API to deploy services
-5. **Progress Reporting**: The plugin reports stage status back to piped
-
-## Features
-
-### Deployment Stages
-
-| Stage | Description |
-|-------|-------------|
-| `CLOUDRUN_SYNC` | Deploy a new Cloud Run revision |
-| `CLOUDRUN_PROMOTE` | Promote revision by adjusting traffic split |
-| `CLOUDRUN_ROLLBACK` | Rollback to a previous revision |
-| `CLOUDRUN_CANARY_CLEANUP` | Clean up old revisions |
-
-### Deployment Strategies
-
-1. **Quick Sync**: Deploy and route 100% traffic immediately
-2. **Canary Deployment**: Gradually shift traffic (e.g., 10% → 50% → 100%)
-3. **Blue-Green Deployment**: Deploy, test, then switch all traffic
-4. **A/B Testing**: Split traffic between versions
-
-### Key Capabilities
-
-- Progressive delivery with traffic splitting
-- Automatic rollback on failure
-- Revision cleanup and management
-- Multi-environment support (staging, production)
-- GCP authentication via service accounts
-
-## Installation
 
 ### Prerequisites
 
-- Go 1.24 or later
-- Access to a GCP project with Cloud Run API enabled
-- PipeCD control plane (local or remote)
+- Go 1.24+
+- GCP project with Cloud Run API enabled
+- PipeCD Control Plane & Piped
 
-### Build from Source
-
-```bash
-# Clone the repository
-git clone https://github.com/your-org/pipecd-plugin-cloudrun.git
-cd pipecd-plugin-cloudrun
-
-# Build for current platform
-make build
-
-# Build for all platforms
-make build-all
-```
-
-### Download Pre-built Binary
+## GCP Setup
 
 ```bash
-# Download the latest release
-curl -L -o plugin_cloudrun \
-  https://github.com/your-org/pipecd-plugin-cloudrun/releases/download/v0.1.0/plugin_cloudrun_linux_amd64
+# Enable Cloud Run API
+gcloud services enable run.googleapis.com
 
-# Make executable
-chmod +x plugin_cloudrun
+# Create service account
+gcloud iam service-accounts create pipecd-cloudrun \
+  --display-name="PipeCD Cloud Run Plugin"
+
+# Grant permissions
+PROJECT_ID=$(gcloud config get-value project)
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:pipecd-cloudrun@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/run.admin"
+
+# Create key
+gcloud iam service-accounts keys create gcp-key.json \
+  --iam-account=pipecd-cloudrun@${PROJECT_ID}.iam.gserviceaccount.com
 ```
 
 ## Configuration
 
-### 1. Piped Configuration
-
-Create a `piped.yaml` file:
+### Piped (`piped.yaml`)
 
 ```yaml
 apiVersion: pipecd.dev/v1beta1
 kind: Piped
 spec:
-  apiAddress: localhost:8080
-  projectID: your-pipecd-project
-  pipedID: your-piped-id
-  pipedKeyData: <base64-encoded-key>
-  insecure: true
-
-  repositories:
-    - repoId: my-apps
-      remote: https://github.com/your-org/your-apps-repo.git
-      branch: main
-
+  apiAddress: pipecd-api:443
+  projectID: my-pipecd-project
+  pipedID: my-piped-id
+  pipedKeyData: <base64-key>
+  
   plugins:
     - name: cloudrun
       port: 7001
-      url: https://github.com/your-org/releases/download/v0.1.0/plugin_cloudrun_linux_amd64
+      url: file:///path/to/cloudrun-plugin
       config:
-        projectID: my-default-project
+        projectID: my-gcp-project
         region: us-central1
-      deployTargets:
-        - name: staging
-          config:
-            projectID: staging-project
-            region: us-central1
-            credentialsFile: /etc/piped/gcp-staging-key.json
-        - name: production
-          config:
-            projectID: production-project
-            region: us-east1
-            credentialsFile: /etc/piped/gcp-prod-key.json
+        credentialsFile: /path/to/gcp-key.json
 ```
 
-### 2. Application Configuration
+### Application (`.pipe.yaml`)
 
-Create a `.pipe.yaml` in your application directory:
+**Quick Sync:**
 
 ```yaml
 apiVersion: pipecd.dev/v1beta1
 kind: CloudRunApp
 spec:
-  name: my-cloudrun-app
-  labels:
-    env: production
-    team: platform
-
   input:
     serviceManifestPath: service.yaml
-    image: gcr.io/my-project/my-app:v1.0.0
-
-  # Quick sync (default)
-  quickSync:
-    prune: true
+    image: gcr.io/project/app:v1.0.0
 ```
 
-### 3. Service Manifest
+**Canary:**
 
-Create a `service.yaml` file:
+```yaml
+apiVersion: pipecd.dev/v1beta1
+kind: CloudRunApp
+spec:
+  input:
+    serviceManifestPath: service.yaml
+    image: gcr.io/project/app:v1.0.0
+  pipeline:
+    stages:
+      - name: CLOUDRUN_SYNC
+        with: {skipTrafficShift: true}
+      - name: CLOUDRUN_PROMOTE
+        with: {percent: 10}
+      - name: WAIT
+        with: {duration: 5m}
+      - name: CLOUDRUN_PROMOTE
+        with: {percent: 100}
+      - name: CLOUDRUN_CANARY_CLEANUP
+```
+
+### Service Manifest (`service.yaml`)
 
 ```yaml
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
   name: my-service
-  labels:
-    app: my-service
 spec:
   template:
-    metadata:
-      annotations:
-        autoscaling.knative.dev/maxScale: '10'
     spec:
-      containerConcurrency: 100
       containers:
-        - image: gcr.io/my-project/my-app:latest
+        - image: gcr.io/project/app:v1.0.0
           ports:
             - containerPort: 8080
           resources:
             limits:
-              cpu: 1000m
-              memory: 512Mi
-  traffic:
-    - latestRevision: true
-      percent: 100
+              cpu: "1000m"
+              memory: "512Mi"
 ```
 
-## Deployment Strategies
+## Deployment Stages
 
-### Quick Sync (Default)
-
-Deploys the new revision and routes 100% traffic immediately.
-
-```yaml
-spec:
-  quickSync:
-    prune: true
-```
-
-### Canary Deployment
-
-Gradually shifts traffic to the new revision.
-
-```yaml
-spec:
-  pipeline:
-    stages:
-      - name: CLOUDRUN_SYNC
-        with:
-          skipTrafficShift: true
-      - name: CLOUDRUN_PROMOTE
-        with:
-          percent: 10
-      - name: WAIT
-        with:
-          duration: 5m
-      - name: CLOUDRUN_PROMOTE
-        with:
-          percent: 50
-      - name: WAIT
-        with:
-          duration: 10m
-      - name: CLOUDRUN_PROMOTE
-        with:
-          percent: 100
-      - name: CLOUDRUN_CANARY_CLEANUP
-```
-
-### Blue-Green Deployment
-
-Deploys a new revision, tests it, then switches all traffic.
-
-```yaml
-spec:
-  pipeline:
-    stages:
-      - name: CLOUDRUN_SYNC
-        with:
-          skipTrafficShift: true
-      - name: CLOUDRUN_PROMOTE
-        with:
-          percent: 0  # Creates tagged URL for testing
-      - name: WAIT_APPROVAL
-      - name: CLOUDRUN_PROMOTE
-        with:
-          percent: 100
-      - name: CLOUDRUN_CANARY_CLEANUP
-```
+| Stage | Purpose |
+|-------|---------|
+| `CLOUDRUN_SYNC` | Deploy new revision |
+| `CLOUDRUN_PROMOTE` | Shift traffic % |
+| `CLOUDRUN_ROLLBACK` | Revert to previous |
+| `CLOUDRUN_CANARY_CLEANUP` | Remove old revisions |
 
 ## Development
+
+```bash
+make build              # Build binary
+make test               # Run tests
+make clean              # Clean build artifacts
+```
 
 ### Project Structure
 
 ```
-pipecd-plugin-cloudrun/
-├── cmd/
-│   └── cloudrun-plugin/     # Plugin entry point
-│       └── main.go
+├── cmd/cloudrun-plugin/    # Entry point
 ├── pkg/
-│   ├── plugin/              # Plugin implementation
-│   │   ├── plugin.go        # Main plugin logic
-│   │   ├── stages.go        # Stage definitions
-│   │   ├── stage_sync.go    # SYNC stage
-│   │   ├── stage_promote.go # PROMOTE stage
-│   │   ├── stage_rollback.go
-│   │   └── stage_cleanup.go
-│   ├── config/              # Configuration structures
-│   │   ├── piped.go         # Piped config
-│   │   └── application.go   # App config
-│   └── cloudrun/            # Cloud Run API client
-│       ├── client.go        # API client
-│       ├── service.go       # Service management
-│       ├── revision.go      # Revision management
-│       └── traffic.go       # Traffic management
-├── examples/                # Example configurations
-├── test/                    # Tests
-├── Makefile
-└── README.md
+│   ├── plugin/            # Plugin implementation
+│   ├── cloudrun/          # Cloud Run API client
+│   └── config/            # Config structures
+└── examples/              # Configuration examples
 ```
-
-### Build Commands
-
-```bash
-# Build for current platform
-make build
-
-# Build for all platforms
-make build-all
-
-# Run tests
-make test
-
-# Run linter
-make lint
-
-# Format code
-make fmt
-```
-
-### Local Development
-
-1. **Set up local PipeCD control plane**:
-   ```bash
-   git clone https://github.com/pipe-cd/pipecd.git
-   cd pipecd
-   make run/pipecd
-   ```
-
-2. **Build and run the plugin**:
-   ```bash
-   cd pipecd-plugin-cloudrun
-   make build
-   ./build/plugin_cloudrun
-   ```
-
-3. **Configure piped** to use your local plugin:
-   ```yaml
-   plugins:
-     - name: cloudrun
-       port: 7001
-       url: file:///path/to/your/plugin_cloudrun
-   ```
-
-4. **Run piped**:
-   ```bash
-   cd pipecd
-   make run/piped CONFIG_FILE=/path/to/piped.yaml
-   ```
 
 ## Troubleshooting
 
-### Plugin Not Starting
+**Authentication errors:**
 
-**Symptom**: Piped fails to start the plugin
+```bash
+gcloud auth activate-service-account --key-file=gcp-key.json
+gcloud run services list
+```
 
-**Solutions**:
-- Check plugin binary path in piped config
-- Verify plugin binary is executable: `chmod +x plugin_cloudrun`
-- Check port availability
-- Review piped logs: `kubectl logs -f deployment/piped`
+**Deployment failures:**
 
-### GCP Authentication Failed
+```bash
+gcloud logging read "resource.type=cloud_run_revision" --limit=50
+```
 
-**Symptom**: Cloud Run API calls fail with authentication error
+**Plugin not starting:**
 
-**Solutions**:
-- Verify service account has `roles/run.developer` role
-- Check credentials file path is correct
-- Ensure Cloud Run API is enabled: `gcloud services enable run.googleapis.com`
-- Test with Application Default Credentials locally
-
-### Service Manifest Not Found
-
-**Symptom**: Plugin cannot find service.yaml
-
-**Solutions**:
-- Verify `serviceManifestPath` in app config
-- Check path is relative to application directory
-- Ensure file exists in git repository
-- Check file is committed to git
-
-### Traffic Not Shifting
-
-**Symptom**: Traffic split not working as expected
-
-**Solutions**:
-- Check stage configuration syntax
-- Verify service name matches manifest
-- Review Cloud Run console for traffic allocation
-- Check plugin logs for errors
-
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### Development Setup
-
-1. Fork the repository
-2. Clone your fork: `git clone https://github.com/your-username/pipecd-plugin-cloudrun.git`
-3. Create a branch: `git checkout -b feature/my-feature`
-4. Make changes and test
-5. Submit a pull request
-
-### Code Standards
-
-- Follow Go best practices
-- Add tests for new features
-- Run `make verify` before submitting
-- Update documentation as needed
+```bash
+chmod +x build/cloudrun-plugin
+lsof -i :7001
+```
 
 ## Resources
 
-- [PipeCD Documentation](https://pipecd.dev/docs)
-- [PipeCD Plugin SDK](https://github.com/pipe-cd/piped-plugin-sdk-go)
-- [Cloud Run Documentation](https://cloud.google.com/run/docs)
-- [Cloud Run API Reference](https://cloud.google.com/run/docs/reference/rest)
+- [PipeCD Docs](https://pipecd.dev/docs)
+- [Cloud Run Docs](https://cloud.google.com/run/docs)
+- [Plugin SDK](https://github.com/pipe-cd/piped-plugin-sdk-go)
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- [PipeCD](https://pipecd.dev) - The continuous delivery platform
-- [Google Cloud Run](https://cloud.google.com/run) - The serverless container platform
-- [PipeCD Plugin SDK](https://github.com/pipe-cd/piped-plugin-sdk-go) - The plugin development kit
+Apache 2.0 - See [LICENSE](LICENSE)

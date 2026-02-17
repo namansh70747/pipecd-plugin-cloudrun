@@ -20,18 +20,18 @@
 //
 // Architecture Overview:
 //
-//   Control Plane (Web UI, API, Metadata Storage)
-//           |
-//           | gRPC
-//           v
-//   Piped (Agent) - Manages plugins
-//   +--------------------------------------------------+
-//   |  +----------------+  +----------------+         |
-//   |  | Cloud Run     |  | Other Plugins  |         |
-//   |  | Plugin (gRPC) |  | (Kubernetes,   |         |
-//   |  |               |  |  Terraform...) |         |
-//   |  +----------------+  +----------------+         |
-//   +--------------------------------------------------+
+//	Control Plane (Web UI, API, Metadata Storage)
+//	        |
+//	        | gRPC
+//	        v
+//	Piped (Agent) - Manages plugins
+//	+--------------------------------------------------+
+//	|  +----------------+  +----------------+         |
+//	|  | Cloud Run     |  | Other Plugins  |         |
+//	|  | Plugin (gRPC) |  | (Kubernetes,   |         |
+//	|  |               |  |  Terraform...) |         |
+//	|  +----------------+  +----------------+         |
+//	+--------------------------------------------------+
 //
 // The plugin runs as a gRPC server and is managed by piped.
 // It implements the DeploymentPlugin interface to handle deployment stages.
@@ -53,11 +53,9 @@ func main() {
 	// Create the plugin using the SDK
 	// Parameters:
 	//   - "cloudrun": Plugin name (must match piped config)
-	//   - "0.1.0": Plugin version
 	//   - WithDeploymentPlugin: Registers this as a deployment plugin
 	p, err := sdk.NewPlugin(
 		"cloudrun",
-		"0.1.0",
 		sdk.WithDeploymentPlugin[
 			config.PluginConfig,
 			config.DeployTargetConfig,

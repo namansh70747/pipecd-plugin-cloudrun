@@ -59,13 +59,10 @@ func BuildTrafficTargets(splits []TrafficSplit) []*runpb.TrafficTarget {
 		}
 
 		if split.IsLatest {
-			target.Type = &runpb.TrafficTarget_LatestRevision{
-				LatestRevision: true,
-			}
+			target.Type = runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST
 		} else {
-			target.Type = &runpb.TrafficTarget_RevisionName{
-				RevisionName: split.RevisionName,
-			}
+			target.Type = runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION
+			target.Revision = split.RevisionName
 		}
 
 		targets = append(targets, target)
@@ -86,7 +83,7 @@ func (tm *TrafficManager) Promote(ctx context.Context, project, region, service 
 	}
 
 	// Get current service to find revisions
-	svc, err := tm.client.GetService(ctx, project, region, service)
+	_, err := tm.client.GetService(ctx, project, region, service)
 	if err != nil {
 		return fmt.Errorf("failed to get service: %w", err)
 	}
@@ -97,7 +94,7 @@ func (tm *TrafficManager) Promote(ctx context.Context, project, region, service 
 		// Route all traffic to latest revision
 		traffic = []*runpb.TrafficTarget{
 			{
-				Type:    &runpb.TrafficTarget_LatestRevision{LatestRevision: true},
+				Type:    runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST,
 				Percent: 100,
 			},
 		}
@@ -112,7 +109,7 @@ func (tm *TrafficManager) Promote(ctx context.Context, project, region, service 
 			// Not enough revisions for splitting, route all to latest
 			traffic = []*runpb.TrafficTarget{
 				{
-					Type:    &runpb.TrafficTarget_LatestRevision{LatestRevision: true},
+					Type:    runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST,
 					Percent: 100,
 				},
 			}
@@ -126,12 +123,13 @@ func (tm *TrafficManager) Promote(ctx context.Context, project, region, service 
 			// Split traffic between latest and previous
 			traffic = []*runpb.TrafficTarget{
 				{
-					Type:    &runpb.TrafficTarget_LatestRevision{LatestRevision: true},
+					Type:    runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST,
 					Percent: percent,
 				},
 				{
-					Type:    &runpb.TrafficTarget_RevisionName{RevisionName: previousRev},
-					Percent: 100 - percent,
+					Type:     runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION,
+					Revision: previousRev,
+					Percent:  100 - percent,
 				},
 			}
 		}
@@ -145,8 +143,9 @@ func (tm *TrafficManager) Promote(ctx context.Context, project, region, service 
 func (tm *TrafficManager) Rollback(ctx context.Context, project, region, service, revision string) error {
 	traffic := []*runpb.TrafficTarget{
 		{
-			Type:    &runpb.TrafficTarget_RevisionName{RevisionName: revision},
-			Percent: 100,
+			Type:     runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION,
+			Revision: revision,
+			Percent:  100,
 		},
 	}
 
@@ -167,12 +166,11 @@ func (tm *TrafficManager) GetCurrentTraffic(ctx context.Context, project, region
 			Tag:     t.Tag,
 		}
 
-		switch v := t.Type.(type) {
-		case *runpb.TrafficTarget_LatestRevision:
-			split.IsLatest = v.LatestRevision
+		if t.Type == runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST {
+			split.IsLatest = true
 			split.RevisionName = "LATEST"
-		case *runpb.TrafficTarget_RevisionName:
-			split.RevisionName = v.RevisionName
+		} else if t.Type == runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION {
+			split.RevisionName = t.Revision
 		}
 
 		splits = append(splits, split)
