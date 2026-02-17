@@ -125,6 +125,49 @@ spec:
 | `CLOUDRUN_ROLLBACK` | Revert to previous |
 | `CLOUDRUN_CANARY_CLEANUP` | Remove old revisions |
 
+## Plan Preview & Drift Detection
+
+The plugin supports **Plan Preview** to show what will change before deployment and **Drift Detection** to identify when live state differs from Git.
+
+### Plan Preview Features
+
+- **Container Image Changes**: Shows current vs desired image versions
+- **Traffic Allocation**: Displays traffic split differences
+- **Resource Limits**: Compares CPU/memory configurations
+- **Scaling Settings**: Identifies min/max instance changes
+- **New Service Creation**: Highlights services that will be created
+
+### Example Output
+
+```
+Target: production
+Project: my-gcp-project
+Region: us-central1
+Service: my-service
+
+📦 Container Image:
+  - Current: gcr.io/project/app:v1.0.0
+  + Desired: gcr.io/project/app:v2.0.0
+
+🚦 Traffic Allocation:
+  Current:
+    - Latest revision: 100%
+  Desired:
+    + Latest revision: 90%
+    + Revision my-service-00042: 10%
+
+🔄 A new revision will be created with 2 change(s)
+```
+
+### Using Plan Preview
+
+Plan preview is automatically triggered by PipeCD when:
+
+- Opening a Pull Request with changes to `.pipe.yaml` or `service.yaml`
+- Manual trigger from PipeCD UI
+
+No additional configuration required - the plugin automatically compares Git state with live Cloud Run services.
+
 ## Development
 
 ```bash

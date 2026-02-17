@@ -16,8 +16,10 @@ package plugin
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"cloud.google.com/go/run/apiv2/runpb"
 	sdk "github.com/pipe-cd/piped-plugin-sdk-go"
 
 	"github.com/pipe-cd/pipecd-plugin-cloudrun/pkg/config"
@@ -242,4 +244,285 @@ func TestDefaultStageConfigs(t *testing.T) {
 			t.Errorf("expected KeepLatest to be true")
 		}
 	})
+}
+
+func TestPlanPreview_CreateService(t *testing.T) {
+	// Test plan preview for creating a new service
+	result := generateCreateServicePlan(
+		&runpb.Service{
+			Name: "test-service",
+			Template: &runpb.RevisionTemplate{
+				Containers: []*runpb.Container{
+					{Image: "gcr.io/project/app:v1.0.0"},
+				},
+				Annotations: map[string]string{
+					"autoscaling.knative.dev/minScale": "0",
+					"autoscaling.knative.dev/maxScale": "10",
+				},
+			},
+			Traffic: []*runpb.TrafficTarget{
+				{
+					Type:    runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST,
+					Percent: 100,
+				},
+			},
+		},
+		"test-project",
+		"us-central1",
+		"staging",
+	)
+
+	if !strings.Contains(result.Summary, "New service") {
+		t.Errorf("expected summary to mention new service, got: %s", result.Summary)
+	}
+
+	details := string(result.Details)
+	if !strings.Contains(details, "test-service") {
+		t.Errorf("expected details to contain service name, got: %s", details)
+	}
+
+	if !strings.Contains(details, "gcr.io/project/app:v1.0.0") {
+		t.Errorf("expected details to contain image, got: %s", details)
+	}
+}
+
+func TestPlanPreview_UpdateService_NoChanges(t *testing.T) {
+	// Test plan preview when service hasn't changed
+	service := &runpb.Service{
+		Name: "test-service",
+		Template: &runpb.RevisionTemplate{
+			Containers: []*runpb.Container{
+				{
+					Image: "gcr.io/project/app:v1.0.0",
+					Resources: &runpb.ResourceRequirements{
+						Limits: map[string]string{
+							"cpu":    "1000m",
+							"memory": "512Mi",
+						},
+					},
+				},
+			},
+			Annotations: map[string]string{
+				"autoscaling.knative.dev/minScale": "0",
+				"autoscaling.knative.dev/maxScale": "10",
+			},
+		},
+		Traffic: []*runpb.TrafficTarget{
+			{
+				Type:    runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST,
+				Percent: 100,
+			},
+		},
+	}
+
+	result := generateUpdateServicePlan(service, service, "test-project", "us-central1", "production")
+
+	if !strings.Contains(result.Summary, "No changes") {
+		t.Errorf("expected summary to indicate no changes, got: %s", result.Summary)
+	}
+
+	details := string(result.Details)
+	if !strings.Contains(details, "No changes detected") {
+		t.Errorf("expected details to indicate no changes, got: %s", details)
+	}
+}
+
+func TestPlanPreview_UpdateService_ImageChange(t *testing.T) {
+	// Test plan preview when only image changes
+	current := &runpb.Service{
+		Name: "test-service",
+		Template: &runpb.RevisionTemplate{
+			Containers: []*runpb.Container{
+				{Image: "gcr.io/project/app:v1.0.0"},
+			},
+		},
+	}
+
+	desired := &runpb.Service{
+		Name: "test-service",
+		Template: &runpb.RevisionTemplate{
+			Containers: []*runpb.Container{
+				{Image: "gcr.io/project/app:v2.0.0"},
+			},
+		},
+	}
+
+	result := generateUpdateServicePlan(current, desired, "test-project", "us-central1", "production")
+
+	if !strings.Contains(result.Summary, "container image") {
+		t.Errorf("expected summary to mention container image change, got: %s", result.Summary)
+	}
+
+	details := string(result.Details)
+	if !strings.Contains(details, "v1.0.0") {
+		t.Errorf("expected details to contain current image, got: %s", details)
+	}
+
+	if !strings.Contains(details, "v2.0.0") {
+		t.Errorf("expected details to contain desired image, got: %s", details)
+	}
+}
+
+func TestPlanPreview_TrafficChanges(t *testing.T) {
+	tests := []struct {
+		name     string
+		current  []*runpb.TrafficTarget
+		desired  []*runpb.TrafficTarget
+		expected bool
+	}{
+		{
+			name: "Same traffic",
+			current: []*runpb.TrafficTarget{
+				{Type: runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST, Percent: 100},
+			},
+			desired: []*runpb.TrafficTarget{
+				{Type: runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST, Percent: 100},
+			},
+			expected: false,
+		},
+		{
+			name: "Different percentages",
+			current: []*runpb.TrafficTarget{
+				{Type: runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST, Percent: 100},
+			},
+			desired: []*runpb.TrafficTarget{
+				{Type: runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST, Percent: 50},
+			},
+			expected: true,
+		},
+		{
+			name: "Different number of targets",
+			current: []*runpb.TrafficTarget{
+				{Type: runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST, Percent: 100},
+			},
+			desired: []*runpb.TrafficTarget{
+				{Type: runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST, Percent: 50},
+				{Type: runpb.TrafficTargetAllocationType_TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION, Revision: "rev-001", Percent: 50},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := hasTrafficChanges(tt.current, tt.desired)
+			if result != tt.expected {
+				t.Errorf("expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestPlanPreview_ResourceChanges(t *testing.T) {
+	tests := []struct {
+		name     string
+		current  *runpb.RevisionTemplate
+		desired  *runpb.RevisionTemplate
+		expected bool
+	}{
+		{
+			name: "Same resources",
+			current: &runpb.RevisionTemplate{
+				Containers: []*runpb.Container{
+					{
+						Resources: &runpb.ResourceRequirements{
+							Limits: map[string]string{"cpu": "1000m", "memory": "512Mi"},
+						},
+					},
+				},
+			},
+			desired: &runpb.RevisionTemplate{
+				Containers: []*runpb.Container{
+					{
+						Resources: &runpb.ResourceRequirements{
+							Limits: map[string]string{"cpu": "1000m", "memory": "512Mi"},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "Different CPU",
+			current: &runpb.RevisionTemplate{
+				Containers: []*runpb.Container{
+					{
+						Resources: &runpb.ResourceRequirements{
+							Limits: map[string]string{"cpu": "1000m", "memory": "512Mi"},
+						},
+					},
+				},
+			},
+			desired: &runpb.RevisionTemplate{
+				Containers: []*runpb.Container{
+					{
+						Resources: &runpb.ResourceRequirements{
+							Limits: map[string]string{"cpu": "2000m", "memory": "512Mi"},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := hasResourceChanges(tt.current, tt.desired)
+			if result != tt.expected {
+				t.Errorf("expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestPlanPreview_ScalingChanges(t *testing.T) {
+	tests := []struct {
+		name     string
+		current  *runpb.RevisionTemplate
+		desired  *runpb.RevisionTemplate
+		expected bool
+	}{
+		{
+			name: "Same scaling",
+			current: &runpb.RevisionTemplate{
+				Annotations: map[string]string{
+					"autoscaling.knative.dev/minScale": "0",
+					"autoscaling.knative.dev/maxScale": "10",
+				},
+			},
+			desired: &runpb.RevisionTemplate{
+				Annotations: map[string]string{
+					"autoscaling.knative.dev/minScale": "0",
+					"autoscaling.knative.dev/maxScale": "10",
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "Different max scale",
+			current: &runpb.RevisionTemplate{
+				Annotations: map[string]string{
+					"autoscaling.knative.dev/minScale": "0",
+					"autoscaling.knative.dev/maxScale": "10",
+				},
+			},
+			desired: &runpb.RevisionTemplate{
+				Annotations: map[string]string{
+					"autoscaling.knative.dev/minScale": "0",
+					"autoscaling.knative.dev/maxScale": "20",
+				},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := hasScalingChanges(tt.current, tt.desired)
+			if result != tt.expected {
+				t.Errorf("expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
 }

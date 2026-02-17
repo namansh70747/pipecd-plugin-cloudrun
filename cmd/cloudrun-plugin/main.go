@@ -54,9 +54,15 @@ func main() {
 	// Parameters:
 	//   - "cloudrun": Plugin name (must match piped config)
 	//   - WithDeploymentPlugin: Registers this as a deployment plugin
+	//   - WithPlanPreviewPlugin: Registers plan preview/drift detection capability
 	p, err := sdk.NewPlugin(
 		"cloudrun",
 		sdk.WithDeploymentPlugin[
+			config.PluginConfig,
+			config.DeployTargetConfig,
+			config.ApplicationConfig,
+		](cloudrunPlugin),
+		sdk.WithPlanPreviewPlugin[
 			config.PluginConfig,
 			config.DeployTargetConfig,
 			config.ApplicationConfig,
