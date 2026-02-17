@@ -41,7 +41,6 @@ package config
 //	          projectID: production-project
 //	          region: us-east1
 //	          credentialsFile: /etc/piped/gcp-prod-key.json
-//
 type PluginConfig struct {
 	// ProjectID is the default GCP project ID for Cloud Run services.
 	// This can be overridden per deploy target.

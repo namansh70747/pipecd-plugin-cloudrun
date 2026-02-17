@@ -36,9 +36,9 @@ const (
 
 // Stage descriptions for UI display.
 const (
-	StageDescriptionCloudRunSync         = "Deploy a new Cloud Run revision"
-	StageDescriptionCloudRunPromote      = "Promote the new revision by adjusting traffic split"
-	StageDescriptionCloudRunRollback     = "Rollback to the previous revision"
+	StageDescriptionCloudRunSync          = "Deploy a new Cloud Run revision"
+	StageDescriptionCloudRunPromote       = "Promote the new revision by adjusting traffic split"
+	StageDescriptionCloudRunRollback      = "Rollback to the previous revision"
 	StageDescriptionCloudRunCanaryCleanup = "Clean up canary revisions"
 )
 

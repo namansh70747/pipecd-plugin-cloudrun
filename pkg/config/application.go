@@ -40,7 +40,6 @@ package config
 //	      - name: CLOUDRUN_PROMOTE
 //	        with:
 //	          percent: 100
-//
 type ApplicationConfig struct {
 	// Name is the name of the application.
 	Name string `json:"name"`
